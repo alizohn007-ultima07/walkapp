@@ -1,0 +1,16 @@
+{
+  "name": "walk-companion-app",
+  "version": "0.1.0",
+  "description": "Компания для пеших прогулок — Android-приложение (Capacitor)",
+  "scripts": {
+    "android": "npx cap add android && npx cap sync android && npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/geolocation": "^6.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/android": "^6.1.2"
+  }
+}

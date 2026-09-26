@@ -1,0 +1,9 @@
+{
+  "appId": "com.walkcompanion.app",
+  "appName": "Компания для прогулок",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": true
+  }
+}
