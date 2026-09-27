@@ -72,7 +72,7 @@ document.getElementById("form-register").addEventListener("submit", async (e) =>
 
 document.getElementById("btn-logout").addEventListener("click", () => {
   Api.setToken(null);
-  closeChatSocket();
+  if (globalSocket) { globalSocket.close(); globalSocket = null; }
   currentUserId = null;
   document.getElementById("bottom-nav").classList.add("hidden");
   document.getElementById("view-feed").classList.add("hidden");
@@ -87,6 +87,8 @@ async function enterApp() {
     const me = await Api.getMyProfile();
     currentUserId = me.user_id;
   } catch (_) { /* профиль подтянется позже на экране профиля */ }
+  await requestNotificationPermission();
+  connectGlobalSocket();
   showView("feed");
 }
 
@@ -104,7 +106,8 @@ async function loadFeed() {
   listEl.innerHTML = `<p class="empty-state">Загрузка…</p>`;
   bannerEl.classList.add("hidden");
 
-  try {lastKnownPosition = await getCurrentPosition();
+  try {
+    lastKnownPosition = await getCurrentPosition();
   } catch (_) {
     bannerEl.textContent = "Не удалось определить геолокацию — лента без сортировки по расстоянию. Проверьте разрешение приложения.";
     bannerEl.classList.remove("hidden");
@@ -205,10 +208,10 @@ async function loadProfile() {
     document.getElementById("profile-bio").value = profile.bio || "";
     document.getElementById("profile-rating").textContent =
       profile.trust_rating_count > 0 ? `${profile.trust_rating.toFixed(1)} (${profile.trust_rating_count})` : "пока нет оценок";
-  } catch (err) {
-    document.getElementById("profile-saved-hint").textContent = "Не удалось загрузить профиль: " + err.message;
+  } catch (err) {document.getElementById("profile-saved-hint").textContent = "Не удалось загрузить профиль: " + err.message;
   }
 }
+
 document.getElementById("btn-save-profile").addEventListener("click", async () => {
   const hintEl = document.getElementById("profile-saved-hint");
   try {
@@ -226,14 +229,30 @@ document.getElementById("btn-save-profile").addEventListener("click", async () =
 // ВАЖНО: пока сообщения передаются и хранятся ОТКРЫТЫМ текстом (просто в поле ciphertext).
 // Настоящее E2E-шифрование (с использованием Profile.public_key) — следующий шаг, пока не подключен.
 let currentUserId = null;
-let chatSocket = null;
+let globalSocket = null;
 let chatPartnerId = null;
 
-function closeChatSocket() {
-  if (chatSocket) {
-    chatSocket.close();
-    chatSocket = null;
-  }
+// Один сокет на всю сессию — подключается сразу после входа и слушает ВСЕ входящие сообщения,
+// не только те, что относятся к открытому сейчас чату. Это нужно для уведомлений.
+function connectGlobalSocket() {
+  if (globalSocket) return;
+  globalSocket = Api.connectChatSocket((data) => {
+    if (data.error) return;
+
+    const chatViewOpen = !document.getElementById("view-chat").classList.contains("hidden");
+    const isForOpenChat = chatViewOpen && data.sender_id === chatPartnerId;
+
+    if (isForOpenChat) {
+      appendChatMessage(data);
+    } else if (data.sender_id !== currentUserId) {
+      showLocalNotification("Новое сообщение", data.ciphertext);
+    }
+  });
+
+  globalSocket.onclose = () => {
+    globalSocket = null;
+    if (Api.token) setTimeout(connectGlobalSocket, 3000); // переподключение
+  };
 }
 
 async function openChat(userId, displayName) {
@@ -250,13 +269,7 @@ async function openChat(userId, displayName) {
       `<p class="empty-state">Не удалось загрузить историю: ${escapeHtml(err.message)}</p>`;
   }
 
-  closeChatSocket();
-  chatSocket = Api.connectChatSocket((data) => {
-    if (data.error) return;
-    if (data.sender_id === chatPartnerId || data.recipient_id === chatPartnerId) {
-      appendChatMessage(data);
-    }
-  });
+  connectGlobalSocket(); // на случай, если сокет ещё не был открыт
 }
 
 function renderChatMessages(messages) {
@@ -281,7 +294,7 @@ function appendChatMessage(m) {
 }
 
 document.getElementById("btn-chat-back").addEventListener("click", () => {
-  closeChatSocket();
+  chatPartnerId = null;
   showView("feed");
 });
 
@@ -289,8 +302,8 @@ document.getElementById("form-chat-send").addEventListener("submit", (e) => {
   e.preventDefault();
   const input = document.getElementById("chat-input");
   const text = input.value.trim();
-  if (!text || !chatSocket || chatSocket.readyState !== WebSocket.OPEN) return;
-  chatSocket.send(JSON.stringify({ recipient_id: chatPartnerId, ciphertext: text }));
+  if (!text || !globalSocket || globalSocket.readyState !== WebSocket.OPEN) return;
+  globalSocket.send(JSON.stringify({ recipient_id: chatPartnerId, ciphertext: text }));
   input.value = "";
 });
 

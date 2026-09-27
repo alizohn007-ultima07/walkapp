@@ -81,3 +81,20 @@ const Api = {
     return ws;
   },
 };
+
+// ===== Уведомления =====
+async function requestNotificationPermission() {
+  if (window.Capacitor?.Plugins?.LocalNotifications) {
+    await window.Capacitor.Plugins.LocalNotifications.requestPermissions();
+  }
+}
+
+async function showLocalNotification(title, body) {
+  if (window.Capacitor?.Plugins?.LocalNotifications) {
+    await window.Capacitor.Plugins.LocalNotifications.schedule({
+      notifications: [{ id: Date.now() % 100000, title, body }],
+    });
+  } else if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, { body });
+  }
+}
