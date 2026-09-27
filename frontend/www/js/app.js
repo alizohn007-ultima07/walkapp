@@ -1,4 +1,5 @@
 // ====== Вспомогательное: получение геопозиции (Capacitor-плагин, либо обычный Web API) ======
+
 async function getCurrentPosition() {
   if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Geolocation) {
     const pos = await window.Capacitor.Plugins.Geolocation.getCurrentPosition();
@@ -18,6 +19,7 @@ async function getCurrentPosition() {
 }
 
 // ====== Переключение экранов ======
+
 function showView(name) {
   document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
   document.getElementById(`view-${name}`).classList.remove("hidden");
@@ -29,6 +31,7 @@ function showView(name) {
 }
 
 // ====== Авторизация ======
+
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
@@ -93,11 +96,13 @@ async function enterApp() {
 }
 
 // ====== Нижняя навигация ======
+
 document.querySelectorAll(".nav-btn").forEach((btn) => {
   btn.addEventListener("click", () => showView(btn.dataset.view));
 });
 
 // ====== Лента ======
+
 let lastKnownPosition = null;
 
 async function loadFeed() {
@@ -164,6 +169,7 @@ function formatTime(iso) {
 }
 
 // ====== Создание статуса ======
+
 const modal = document.getElementById("modal-new-status");
 
 document.getElementById("btn-new-status").addEventListener("click", async () => {
@@ -200,6 +206,7 @@ document.getElementById("btn-publish-status").addEventListener("click", async ()
 });
 
 // ====== Профиль ======
+
 async function loadProfile() {
   try {
     const profile = await Api.getMyProfile();
@@ -228,6 +235,7 @@ document.getElementById("btn-save-profile").addEventListener("click", async () =
 // ====== Чат ======
 // ВАЖНО: пока сообщения передаются и хранятся ОТКРЫТЫМ текстом (просто в поле ciphertext).
 // Настоящее E2E-шифрование (с использованием Profile.public_key) — следующий шаг, пока не подключен.
+
 let currentUserId = null;
 let globalSocket = null;
 let chatPartnerId = null;
@@ -235,9 +243,19 @@ let chatPartnerId = null;
 // Один сокет на всю сессию — подключается сразу после входа и слушает ВСЕ входящие сообщения,
 // не только те, что относятся к открытому сейчас чату. Это нужно для уведомлений.
 function connectGlobalSocket() {
-  if (globalSocket) return;
+  if (globalSocket) {
+    console.log("connectGlobalSocket: сокет уже существует, readyState =", globalSocket.readyState);
+    return;
+  }
+
+  console.log("connectGlobalSocket: открываем новое соединение…");
+
   globalSocket = Api.connectChatSocket((data) => {
-    if (data.error) return;
+    console.log("WS message received:", data);
+    if (data.error) {
+      console.error("WS вернул ошибку:", data.error);
+      return;
+    }
 
     const chatViewOpen = !document.getElementById("view-chat").classList.contains("hidden");
     const isForOpenChat = chatViewOpen && data.sender_id === chatPartnerId;
@@ -249,7 +267,16 @@ function connectGlobalSocket() {
     }
   });
 
-  globalSocket.onclose = () => {
+  globalSocket.onopen = () => {
+    console.log("WS OPEN — соединение установлено");
+  };
+
+  globalSocket.onerror = (e) => {
+    console.error("WS ERROR", e);
+  };
+
+  globalSocket.onclose = (e) => {
+    console.warn("WS CLOSED, code:", e.code, "reason:", e.reason);
     globalSocket = null;
     if (Api.token) setTimeout(connectGlobalSocket, 3000); // переподключение
   };
@@ -302,12 +329,33 @@ document.getElementById("form-chat-send").addEventListener("submit", (e) => {
   e.preventDefault();
   const input = document.getElementById("chat-input");
   const text = input.value.trim();
-  if (!text || !globalSocket || globalSocket.readyState !== WebSocket.OPEN) return;
+
+  console.log("Попытка отправки:", {recipient_id: chatPartnerId,
+    ciphertext: text,
+    socketExists: !!globalSocket,
+    readyState: globalSocket ? globalSocket.readyState : "нет сокета",
+  });
+
+  if (!text) {
+    console.warn("Отправка отменена: пустой текст");
+    return;
+  }
+  if (!globalSocket) {
+    console.warn("Отправка отменена: сокет не создан вообще");
+    return;
+  }
+  if (globalSocket.readyState !== WebSocket.OPEN) {
+    console.warn("Отправка отменена: сокет не в состоянии OPEN, readyState =", globalSocket.readyState);
+    return;
+  }
+
   globalSocket.send(JSON.stringify({ recipient_id: chatPartnerId, ciphertext: text }));
+  console.log("Сообщение отправлено через сокет");
   input.value = "";
 });
 
 // ====== Точка входа ======
+
 (function init() {
   const token = Api.loadToken();
   if (token) {
