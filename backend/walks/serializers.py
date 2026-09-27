@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from .models import Message, Profile, WalkStatus
+from .models import Message, Profile, WalkStatus, WalkRating, Comment
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -70,3 +70,28 @@ class PublicKeySerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = ["user_id", "public_key"]
+
+
+class WalkRatingSerializer(serializers.ModelSerializer):
+    rater_id = serializers.IntegerField(source="rater.id", read_only=True)
+
+    class Meta:
+        model = WalkRating
+        fields = [
+            "id", "walk_status", "rater_id", "rated_user", "score", "comment", "created_at",
+        ]
+        read_only_fields = ["id", "rater_id", "created_at"]
+
+
+class CommentSerializer(serializers.ModelSerializer):
+    author_id = serializers.IntegerField(source="author.id", read_only=True)
+    author_display_name = serializers.CharField(
+        source="author.profile.display_name", read_only=True
+    )
+
+    class Meta:
+        model = Comment
+        fields = [
+            "id", "walk_status", "author_id", "author_display_name", "text", "created_at",
+        ]
+        read_only_fields = ["id", "author_id", "author_display_name", "created_at"]
