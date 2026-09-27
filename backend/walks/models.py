@@ -3,6 +3,7 @@ from django.db import models
 
 
 class Profile(models.Model):
+    public_key = models.TextField("Публичный ключ (для E2E-шифрования)", blank=True)
     """Профиль пользователя. Один профиль на пользователя Django."""
 
     user = models.OneToOneField(
@@ -69,7 +70,7 @@ class Response(models.Model):
 
 
 class Message(models.Model):
-    """Сообщение в чате между пользователями (этап: 16–31 января по плану)."""
+    """Сообщение в чате между пользователями, хранится в зашифрованном виде (E2E)."""
 
     sender = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_messages"
@@ -77,7 +78,7 @@ class Message(models.Model):
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="received_messages"
     )
-    text = models.TextField("Текст сообщения")
+    ciphertext = models.TextField("Зашифрованный текст (base64)")
     is_read = models.BooleanField("Прочитано", default=False)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 

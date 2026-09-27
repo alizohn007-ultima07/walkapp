@@ -1,9 +1,7 @@
 // ===== Настройка адреса backend'а =====
-// При запуске backend'а локально на компьютере и тестировании в эмуляторе Android
-// используйте 10.0.2.2 — это специальный адрес, по которому эмулятор видит localhost компьютера.
-// Для физического телефона в той же Wi-Fi-сети укажите локальный IP компьютера, например http://192.168.1.50:8000
-// Когда backend будет выложен на хостинг — впишите сюда его настоящий адрес (https://...).
-const API_BASE_URL = "http://localhost:8000/api";
+const API_BASE_URL = "https://walkapp-backend-1lw9.onrender.com/api";
+// Тот же хост, но для WebSocket (wss вместо https)
+const WS_BASE_URL = API_BASE_URL.replace(/^https/, "wss").replace(/\/api$/, "");
 
 const Api = {
   token: null,
@@ -65,5 +63,21 @@ const Api = {
 
   createStatus(text, latitude, longitude) {
     return this._request("/statuses/", { method: "POST", body: { text, latitude, longitude } });
+  },
+
+  // ===== Чат =====
+  getChatHistory(userId) {
+    return this._request(`/chat/${userId}/history/`);
+  },
+
+  // Открывает (или переиспользует) WebSocket-соединение чата.
+  // onMessage(data) вызывается при каждом входящем сообщении.
+  connectChatSocket(onMessage) {
+    const ws = new WebSocket(`${WS_BASE_URL}/ws/chat/?token=${this.token}`);
+    ws.onmessage = (event) => {
+      try { onMessage(JSON.parse(event.data)); }
+      catch (_) { /* игнорируем некорректный пакет */ }
+    };
+    return ws;
   },
 };

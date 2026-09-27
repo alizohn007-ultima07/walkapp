@@ -1,11 +1,21 @@
 from django.contrib.auth import authenticate
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.authtoken.models import Token
+from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response as DRFResponse
 from rest_framework.views import APIView
 
-from .models import Profile, WalkStatus
-from .serializers import ProfileSerializer, RegisterSerializer, WalkStatusSerializer
+from .models import Message, Profile, WalkStatus
+from .serializers import (
+    MessageSerializer,
+    ProfileSerializer,
+    PublicKeySerializer,
+    RegisterSerializer,
+    WalkStatusSerializer,
+)
 from .utils import haversine_km
 
 
@@ -94,3 +104,26 @@ class WalkStatusListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
+
+
+class ConversationHistoryView(ListAPIView):
+    """GET /api/chat/<user_id>/history/ — история переписки текущего пользователя с user_id."""
+    serializer_class = MessageSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        other_id = self.kwargs["user_id"]
+        me = self.request.user
+        return Message.objects.filter(
+            Q(sender=me, recipient_id=other_id) | Q(sender_id=other_id, recipient=me)
+        ).order_by("created_at")
+
+
+class PublicKeyView(RetrieveAPIView):
+    """GET /api/chat/<user_id>/public-key/ — публичный ключ пользователя (для E2E-шифрования)."""
+
+    serializer_class = PublicKeySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return get_object_or_404(Profile, user_id=self.kwargs["user_id"])

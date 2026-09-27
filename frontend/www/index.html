@@ -11,7 +11,7 @@
   <!-- Экран авторизации -->
   <section id="view-auth" class="view">
     <div class="auth-card">
-      <h1>🚶 Компания для прогулок</h1>
+      <h1>🚶  Компания для прогулок</h1>
       <div class="tabs">
         <button class="tab-btn active" data-tab="login">Вход</button>
         <button class="tab-btn" data-tab="register">Регистрация</button>
@@ -56,7 +56,7 @@
       <h2>Профиль</h2>
     </header>
     <div class="profile-card">
-      <div class="avatar-placeholder" id="profile-avatar">🙂</div>
+      <div class="avatar-placeholder" id="profile-avatar">🙂 </div>
       <input type="text" id="profile-displayname" placeholder="Имя">
       <textarea id="profile-bio" placeholder="Расскажите о себе" maxlength="280"></textarea>
       <div class="rating-row">
@@ -66,6 +66,23 @@
       <button id="btn-save-profile">Сохранить</button>
       <p class="hint" id="profile-saved-hint"></p>
     </div>
+  </section>
+
+  <!-- Экран чата с конкретным пользователем -->
+  <section id="view-chat" class="view hidden">
+    <header class="app-header">
+      <button id="btn-chat-back" class="icon-btn">←</button>
+      <h2 id="chat-partner-name">Чат</h2>
+    </header>
+
+    <div id="chat-messages" class="chat-messages">
+      <p class="empty-state">Загрузка…</p>
+    </div>
+
+    <form id="form-chat-send" class="chat-input-row">
+      <input type="text" id="chat-input" placeholder="Сообщение…" autocomplete="off" required>
+      <button type="submit">Отправить</button>
+    </form>
   </section>
 
   <!-- Модалка создания статуса -->

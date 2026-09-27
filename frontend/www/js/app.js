@@ -1,11 +1,9 @@
 // ====== Вспомогательное: получение геопозиции (Capacitor-плагин, либо обычный Web API) ======
 async function getCurrentPosition() {
-  // Если приложение собрано через Capacitor и плагин Geolocation подключён — используем его.
   if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Geolocation) {
     const pos = await window.Capacitor.Plugins.Geolocation.getCurrentPosition();
     return { lat: pos.coords.latitude, lon: pos.coords.longitude };
   }
-  // Иначе — обычный браузерный Geolocation API (работает и в WebView).
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error("Геолокация не поддерживается устройством."));
@@ -50,7 +48,7 @@ document.getElementById("form-login").addEventListener("submit", async (e) => {
   try {
     const data = await Api.login(username, password);
     Api.setToken(data.token);
-    enterApp();
+    await enterApp();
   } catch (err) {
     errorEl.textContent = err.message;
   }
@@ -66,7 +64,7 @@ document.getElementById("form-register").addEventListener("submit", async (e) =>
   try {
     const data = await Api.register(username, password, displayName);
     Api.setToken(data.token);
-    enterApp();
+    await enterApp();
   } catch (err) {
     errorEl.textContent = err.message;
   }
@@ -74,15 +72,21 @@ document.getElementById("form-register").addEventListener("submit", async (e) =>
 
 document.getElementById("btn-logout").addEventListener("click", () => {
   Api.setToken(null);
+  closeChatSocket();
+  currentUserId = null;
   document.getElementById("bottom-nav").classList.add("hidden");
   document.getElementById("view-feed").classList.add("hidden");
   document.getElementById("view-profile").classList.add("hidden");
   document.getElementById("view-auth").classList.remove("hidden");
 });
 
-function enterApp() {
+async function enterApp() {
   document.getElementById("view-auth").classList.add("hidden");
   document.getElementById("bottom-nav").classList.remove("hidden");
+  try {
+    const me = await Api.getMyProfile();
+    currentUserId = me.user_id;
+  } catch (_) { /* профиль подтянется позже на экране профиля */ }
   showView("feed");
 }
 
@@ -100,8 +104,7 @@ async function loadFeed() {
   listEl.innerHTML = `<p class="empty-state">Загрузка…</p>`;
   bannerEl.classList.add("hidden");
 
-  try {
-    lastKnownPosition = await getCurrentPosition();
+  try {lastKnownPosition = await getCurrentPosition();
   } catch (_) {
     bannerEl.textContent = "Не удалось определить геолокацию — лента без сортировки по расстоянию. Проверьте разрешение приложения.";
     bannerEl.classList.remove("hidden");
@@ -128,9 +131,22 @@ function renderFeed(items) {
         ${item.distance_km != null ? `<span class="distance">${item.distance_km} км</span>` : ""}
       </div>
       <p class="text">${escapeHtml(item.text)}</p>
-      <p class="meta">${formatTime(item.created_at)}</p>
+      <div class="row-bottom">
+        <p class="meta">${formatTime(item.created_at)}</p>
+        ${item.author_id != null && item.author_id !== currentUserId ? `
+          <button class="btn-message" data-user-id="${item.author_id}"
+                  data-user-name="${escapeHtml(item.author_display_name || item.author_username)}">
+            Написать
+          </button>` : ""}
+      </div>
     </div>
   `).join("");
+
+  listEl.querySelectorAll(".btn-message").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openChat(Number(btn.dataset.userId), btn.dataset.userName);
+    });
+  });
 }
 
 function escapeHtml(str) {
@@ -184,6 +200,7 @@ document.getElementById("btn-publish-status").addEventListener("click", async ()
 async function loadProfile() {
   try {
     const profile = await Api.getMyProfile();
+    currentUserId = profile.user_id;
     document.getElementById("profile-displayname").value = profile.display_name || "";
     document.getElementById("profile-bio").value = profile.bio || "";
     document.getElementById("profile-rating").textContent =
@@ -192,7 +209,6 @@ async function loadProfile() {
     document.getElementById("profile-saved-hint").textContent = "Не удалось загрузить профиль: " + err.message;
   }
 }
-
 document.getElementById("btn-save-profile").addEventListener("click", async () => {
   const hintEl = document.getElementById("profile-saved-hint");
   try {
@@ -204,6 +220,78 @@ document.getElementById("btn-save-profile").addEventListener("click", async () =
   } catch (err) {
     hintEl.textContent = "Ошибка сохранения: " + err.message;
   }
+});
+
+// ====== Чат ======
+// ВАЖНО: пока сообщения передаются и хранятся ОТКРЫТЫМ текстом (просто в поле ciphertext).
+// Настоящее E2E-шифрование (с использованием Profile.public_key) — следующий шаг, пока не подключен.
+let currentUserId = null;
+let chatSocket = null;
+let chatPartnerId = null;
+
+function closeChatSocket() {
+  if (chatSocket) {
+    chatSocket.close();
+    chatSocket = null;
+  }
+}
+
+async function openChat(userId, displayName) {
+  chatPartnerId = userId;
+  document.getElementById("chat-partner-name").textContent = displayName;
+  document.getElementById("chat-messages").innerHTML = `<p class="empty-state">Загрузка…</p>`;
+  showView("chat");
+
+  try {
+    const history = await Api.getChatHistory(userId);
+    renderChatMessages(history);
+  } catch (err) {
+    document.getElementById("chat-messages").innerHTML =
+      `<p class="empty-state">Не удалось загрузить историю: ${escapeHtml(err.message)}</p>`;
+  }
+
+  closeChatSocket();
+  chatSocket = Api.connectChatSocket((data) => {
+    if (data.error) return;
+    if (data.sender_id === chatPartnerId || data.recipient_id === chatPartnerId) {
+      appendChatMessage(data);
+    }
+  });
+}
+
+function renderChatMessages(messages) {
+  const listEl = document.getElementById("chat-messages");
+  if (!messages.length) {
+    listEl.innerHTML = `<p class="empty-state">Пока нет сообщений. Начните переписку!</p>`;
+    return;
+  }
+  listEl.innerHTML = "";
+  messages.forEach((m) => appendChatMessage(m));
+}
+
+function appendChatMessage(m) {
+  const listEl = document.getElementById("chat-messages");
+  if (listEl.querySelector(".empty-state")) listEl.innerHTML = "";
+  const mine = m.sender === currentUserId || m.sender_id === currentUserId;
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble" + (mine ? " mine" : "");
+  bubble.textContent = m.ciphertext; // пока это открытый текст, без шифрования
+  listEl.appendChild(bubble);
+  listEl.scrollTop = listEl.scrollHeight;
+}
+
+document.getElementById("btn-chat-back").addEventListener("click", () => {
+  closeChatSocket();
+  showView("feed");
+});
+
+document.getElementById("form-chat-send").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
+  if (!text || !chatSocket || chatSocket.readyState !== WebSocket.OPEN) return;
+  chatSocket.send(JSON.stringify({ recipient_id: chatPartnerId, ciphertext: text }));
+  input.value = "";
 });
 
 // ====== Точка входа ======
