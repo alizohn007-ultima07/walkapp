@@ -102,3 +102,19 @@ class WalkRating(models.Model):
 
     class Meta:
         unique_together = ("walk_status", "rater", "rated_user")
+
+
+class Comment(models.Model):
+    """Комментарий к статусу прогулки."""
+
+    walk_status = models.ForeignKey(WalkStatus, on_delete=models.CASCADE, related_name="comments"
+    )
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    text = models.CharField(max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.author}: {self.text[:30]}"

@@ -109,7 +109,7 @@ class WalkStatusListCreateView(generics.ListCreateAPIView):
 
 
 class ConversationHistoryView(ListAPIView):
-    """GET /api/chat/<user_id>/history/ — история переписки текущего пользователя с user_id."""
+    """GET /api/chat/<user_id>/history/ — история переписки; входящие помечаются прочитанными."""
 
     serializer_class = MessageSerializer
     permission_classes = [IsAuthenticated]
@@ -117,6 +117,7 @@ class ConversationHistoryView(ListAPIView):
     def get_queryset(self):
         other_id = self.kwargs["user_id"]
         me = self.request.user
+        Message.objects.filter(sender_id=other_id, recipient=me, is_read=False).update(is_read=True)
         return Message.objects.filter(
             Q(sender=me, recipient_id=other_id) | Q(sender_id=other_id, recipient=me)
         ).order_by("created_at")
@@ -198,3 +199,4 @@ class ConversationListView(APIView):
 
         result.sort(key=lambda x: x["last_at"] or "", reverse=True)
         return DRFResponse(result)
+ConversationHistoryView
