@@ -1,364 +1,160 @@
-// ====== Вспомогательное: получение геопозиции (Capacitor-плагин, либо обычный Web API) ======
+import { api } from './api.js';
+import {
+  showLocalNotification,
+  ensureNotificationPermission,
+} from './notifications.js';
 
-async function getCurrentPosition() {
-  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Geolocation) {
-    const pos = await window.Capacitor.Plugins.Geolocation.getCurrentPosition();
-    return { lat: pos.coords.latitude, lon: pos.coords.longitude };
-  }
+// ---------- Всплывашка снизу ----------
+const toastEl = document.getElementById('toast');
+let toastTimer;
+
+function showToast(text, type = '') {
+  toastEl.textContent = text;
+  toastEl.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastEl.className = '';
+  }, 2500);
+}
+
+// ---------- Где я ----------
+function getMyPlace() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      reject(new Error("Геолокация не поддерживается устройством."));
+      reject(new Error('Нет доступа к геолокации'));
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-      (err) => reject(err),
-      { enableHighAccuracy: true, timeout: 10000 }
+      (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+      () => reject(new Error('Разреши геолокацию')),
+      { timeout: 10000 },
     );
   });
 }
 
-// ====== Переключение экранов ======
-
-function showView(name) {
-  document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
-  document.getElementById(`view-${name}`).classList.remove("hidden");
-  document.querySelectorAll(".nav-btn").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.view === name);
-  });
-  if (name === "feed") loadFeed();
-  if (name === "profile") loadProfile();
-}
-
-// ====== Авторизация ======
-
-document.querySelectorAll(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    const tab = btn.dataset.tab;
-    document.getElementById("form-login").classList.toggle("hidden", tab !== "login");
-    document.getElementById("form-register").classList.toggle("hidden", tab !== "register");
-  });
-});
-
-document.getElementById("form-login").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const username = document.getElementById("login-username").value.trim();
-  const password = document.getElementById("login-password").value;
-  const errorEl = document.getElementById("login-error");
-  errorEl.textContent = "";
-  try {
-    const data = await Api.login(username, password);
-    Api.setToken(data.token);
-    await enterApp();
-  } catch (err) {
-    errorEl.textContent = err.message;
-  }
-});
-
-document.getElementById("form-register").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const username = document.getElementById("reg-username").value.trim();
-  const displayName = document.getElementById("reg-displayname").value.trim();
-  const password = document.getElementById("reg-password").value;
-  const errorEl = document.getElementById("register-error");
-  errorEl.textContent = "";
-  try {
-    const data = await Api.register(username, password, displayName);
-    Api.setToken(data.token);
-    await enterApp();
-  } catch (err) {
-    errorEl.textContent = err.message;
-  }
-});
-
-document.getElementById("btn-logout").addEventListener("click", () => {
-  Api.setToken(null);
-  if (globalSocket) { globalSocket.close(); globalSocket = null; }
-  currentUserId = null;
-  document.getElementById("bottom-nav").classList.add("hidden");
-  document.getElementById("view-feed").classList.add("hidden");
-  document.getElementById("view-profile").classList.add("hidden");
-  document.getElementById("view-auth").classList.remove("hidden");
-});
-
-async function enterApp() {
-  document.getElementById("view-auth").classList.add("hidden");
-  document.getElementById("bottom-nav").classList.remove("hidden");
-  try {
-    const me = await Api.getMyProfile();
-    currentUserId = me.user_id;
-  } catch (_) { /* профиль подтянется позже на экране профиля */ }
-  await requestNotificationPermission();
-  connectGlobalSocket();
-  showView("feed");
-}
-
-// ====== Нижняя навигация ======
-
-document.querySelectorAll(".nav-btn").forEach((btn) => {
-  btn.addEventListener("click", () => showView(btn.dataset.view));
-});
-
-// ====== Лента ======
-
-let lastKnownPosition = null;
-
-async function loadFeed() {
-  const listEl = document.getElementById("feed-list");
-  const bannerEl = document.getElementById("feed-status-banner");
-  listEl.innerHTML = `<p class="empty-state">Загрузка…</p>`;
-  bannerEl.classList.add("hidden");
+// ---------- Лента: показать людей ----------
+async function showFeed() {
+  const feed = document.getElementById('feed');
+  feed.innerHTML = '<div class="loading">Загружаем…</div>';
 
   try {
-    lastKnownPosition = await getCurrentPosition();
-  } catch (_) {
-    bannerEl.textContent = "Не удалось определить геолокацию — лента без сортировки по расстоянию. Проверьте разрешение приложения.";
-    bannerEl.classList.remove("hidden");
-  }
+    let place = {};
+    try {
+      place = await getMyPlace();
+    } catch {}
 
-  try {
-    const items = await Api.getFeed(lastKnownPosition?.lat, lastKnownPosition?.lon);
-    renderFeed(items);
-  } catch (err) {
-    listEl.innerHTML = `<p class="empty-state">Не удалось загрузить ленту: ${escapeHtml(err.message)}</p>`;
-  }
-}
+    const list = (await api.listStatuses(place)) || [];
 
-function renderFeed(items) {
-  const listEl = document.getElementById("feed-list");
-  if (!items.length) {
-    listEl.innerHTML = `<p class="empty-state">Пока никто не гуляет рядом. Будьте первым!</p>`;
-    return;
-  }
-  listEl.innerHTML = items.map((item) => `
-    <div class="status-card">
-      <div class="row-top">
-        <span class="author">${escapeHtml(item.author_display_name || item.author_username)}</span>
-        ${item.distance_km != null ? `<span class="distance">${item.distance_km} км</span>` : ""}
-      </div>
-      <p class="text">${escapeHtml(item.text)}</p>
-      <div class="row-bottom">
-        <p class="meta">${formatTime(item.created_at)}</p>
-        ${item.author_id != null && item.author_id !== currentUserId ? `
-          <button class="btn-message" data-user-id="${item.author_id}"
-                  data-user-name="${escapeHtml(item.author_display_name || item.author_username)}">
-            Написать
-          </button>` : ""}
-      </div>
-    </div>
-  `).join("");
-
-  listEl.querySelectorAll(".btn-message").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      openChat(Number(btn.dataset.userId), btn.dataset.userName);
-    });
-  });
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
-}
-
-function formatTime(iso) {
-  const d = new Date(iso);
-  return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-// ====== Создание статуса ======
-
-const modal = document.getElementById("modal-new-status");
-
-document.getElementById("btn-new-status").addEventListener("click", async () => {
-  modal.classList.remove("hidden");
-  document.getElementById("new-status-text").value = "";
-  const geoStatusEl = document.getElementById("geo-status");
-  geoStatusEl.textContent = "Определяем ваше местоположение…";
-  try {
-    lastKnownPosition = await getCurrentPosition();
-    geoStatusEl.textContent = "Местоположение определено ✓";
-  } catch (err) {
-    geoStatusEl.textContent = "Не удалось определить местоположение: " + err.message;
-  }
-});
-
-document.getElementById("btn-cancel-status").addEventListener("click", () => {
-  modal.classList.add("hidden");
-});
-
-document.getElementById("btn-publish-status").addEventListener("click", async () => {
-  const text = document.getElementById("new-status-text").value.trim();
-  if (!text) return;
-  if (!lastKnownPosition) {
-    document.getElementById("geo-status").textContent = "Нужна геолокация, чтобы опубликовать статус.";
-    return;
-  }
-  try {
-    await Api.createStatus(text, lastKnownPosition.lat, lastKnownPosition.lon);
-    modal.classList.add("hidden");
-    loadFeed();
-  } catch (err) {
-    document.getElementById("geo-status").textContent = "Ошибка публикации: " + err.message;
-  }
-});
-
-// ====== Профиль ======
-
-async function loadProfile() {
-  try {
-    const profile = await Api.getMyProfile();
-    currentUserId = profile.user_id;
-    document.getElementById("profile-displayname").value = profile.display_name || "";
-    document.getElementById("profile-bio").value = profile.bio || "";
-    document.getElementById("profile-rating").textContent =
-      profile.trust_rating_count > 0 ? `${profile.trust_rating.toFixed(1)} (${profile.trust_rating_count})` : "пока нет оценок";
-  } catch (err) {document.getElementById("profile-saved-hint").textContent = "Не удалось загрузить профиль: " + err.message;
-  }
-}
-
-document.getElementById("btn-save-profile").addEventListener("click", async () => {
-  const hintEl = document.getElementById("profile-saved-hint");
-  try {
-    await Api.updateMyProfile({
-      display_name: document.getElementById("profile-displayname").value.trim(),
-      bio: document.getElementById("profile-bio").value.trim(),
-    });
-    hintEl.textContent = "Сохранено ✓";
-  } catch (err) {
-    hintEl.textContent = "Ошибка сохранения: " + err.message;
-  }
-});
-
-// ====== Чат ======
-// ВАЖНО: пока сообщения передаются и хранятся ОТКРЫТЫМ текстом (просто в поле ciphertext).
-// Настоящее E2E-шифрование (с использованием Profile.public_key) — следующий шаг, пока не подключен.
-
-let currentUserId = null;
-let globalSocket = null;
-let chatPartnerId = null;
-
-// Один сокет на всю сессию — подключается сразу после входа и слушает ВСЕ входящие сообщения,
-// не только те, что относятся к открытому сейчас чату. Это нужно для уведомлений.
-function connectGlobalSocket() {
-  if (globalSocket) {
-    console.log("connectGlobalSocket: сокет уже существует, readyState =", globalSocket.readyState);
-    return;
-  }
-
-  console.log("connectGlobalSocket: открываем новое соединение…");
-
-  globalSocket = Api.connectChatSocket((data) => {
-    console.log("WS message received:", data);
-    if (data.error) {
-      console.error("WS вернул ошибку:", data.error);
+    if (list.length === 0) {
+      feed.innerHTML = `
+        <div class="empty">
+          <div class="empty-emoji">🚶</div>
+          <div class="empty-title">Пока никого нет</div>
+          <div class="empty-text">
+            Будь первым!<br>Опубликуй статус выше.
+          </div>
+        </div>`;
       return;
     }
 
-    const chatViewOpen = !document.getElementById("view-chat").classList.contains("hidden");
-    const isForOpenChat = chatViewOpen && data.sender_id === chatPartnerId;
+    feed.innerHTML = list.map((s, i) => {
+      const name = s.display_name || s.username || 'Гуляющий';
+      const letter = name[0].toUpperCase();
+      const colorClass = 'c' + ((i % 4) + 1);
+      const dist = s.distance_km != null
+        ? '📍 ' + s.distance_km.toFixed(2) + ' км от тебя'
+        : '📍 Рядом';
 
-    if (isForOpenChat) {
-      appendChatMessage(data);
-    } else if (data.sender_id !== currentUserId) {
-      showLocalNotification("Новое сообщение", data.ciphertext);
-    }
-  });
-
-  globalSocket.onopen = () => {
-    console.log("WS OPEN — соединение установлено");
-  };
-
-  globalSocket.onerror = (e) => {
-    console.error("WS ERROR", e);
-  };
-
-  globalSocket.onclose = (e) => {
-    console.warn("WS CLOSED, code:", e.code, "reason:", e.reason);
-    globalSocket = null;
-    if (Api.token) setTimeout(connectGlobalSocket, 3000); // переподключение
-  };
-}
-
-async function openChat(userId, displayName) {
-  chatPartnerId = userId;
-  document.getElementById("chat-partner-name").textContent = displayName;
-  document.getElementById("chat-messages").innerHTML = `<p class="empty-state">Загрузка…</p>`;
-  showView("chat");
-
-  try {
-    const history = await Api.getChatHistory(userId);
-    renderChatMessages(history);
-  } catch (err) {
-    document.getElementById("chat-messages").innerHTML =
-      `<p class="empty-state">Не удалось загрузить историю: ${escapeHtml(err.message)}</p>`;
+      return `
+        <div class="person">
+          <div class="person-top">
+            <div class="person-ava ${colorClass}">${letter}</div>
+            <div class="person-info">
+              <div class="person-name">${name}</div>
+              <div class="person-where">${dist}</div>
+            </div>
+          </div>
+          <div class="person-text">${s.text}</div>
+          <div class="person-time">${timeAgo(s.created_at)}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    feed.innerHTML = `
+      <div class="empty">
+        <div class="empty-emoji">😕</div>
+        <div class="empty-title">Не получилось</div>
+        <div class="empty-text">${e.message}</div>
+      </div>`;
   }
-
-  connectGlobalSocket(); // на случай, если сокет ещё не был открыт
 }
 
-function renderChatMessages(messages) {
-  const listEl = document.getElementById("chat-messages");
-  if (!messages.length) {
-    listEl.innerHTML = `<p class="empty-state">Пока нет сообщений. Начните переписку!</p>`;
-    return;
-  }
-  listEl.innerHTML = "";
-  messages.forEach((m) => appendChatMessage(m));
+function timeAgo(iso) {
+  const sec = (Date.now() - new Date(iso)) / 1000;
+  if (sec < 60) return 'только что';
+  if (sec < 3600) return Math.floor(sec / 60) + ' мин назад';
+  if (sec < 86400) return Math.floor(sec / 3600) + ' ч назад';
+  return new Date(iso).toLocaleDateString('ru-RU');
 }
 
-function appendChatMessage(m) {
-  const listEl = document.getElementById("chat-messages");
-  if (listEl.querySelector(".empty-state")) listEl.innerHTML = "";
-  const mine = m.sender === currentUserId || m.sender_id === currentUserId;
-  const bubble = document.createElement("div");
-  bubble.className = "chat-bubble" + (mine ? " mine" : "");
-  bubble.textContent = m.ciphertext; // пока это открытый текст, без шифрования
-  listEl.appendChild(bubble);
-  listEl.scrollTop = listEl.scrollHeight;
-}
-
-document.getElementById("btn-chat-back").addEventListener("click", () => {
-  chatPartnerId = null;
-  showView("feed");
-});
-
-document.getElementById("form-chat-send").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const input = document.getElementById("chat-input");
-  const text = input.value.trim();
-
-  console.log("Попытка отправки:", {recipient_id: chatPartnerId,
-    ciphertext: text,
-    socketExists: !!globalSocket,
-    readyState: globalSocket ? globalSocket.readyState : "нет сокета",
-  });
+// ---------- Кнопка "Опубликовать" ----------
+document.getElementById('btn-post').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  const text = document.getElementById('text').value.trim();
 
   if (!text) {
-    console.warn("Отправка отменена: пустой текст");
-    return;
-  }
-  if (!globalSocket) {
-    console.warn("Отправка отменена: сокет не создан вообще");
-    return;
-  }
-  if (globalSocket.readyState !== WebSocket.OPEN) {
-    console.warn("Отправка отменена: сокет не в состоянии OPEN, readyState =", globalSocket.readyState);
+    showToast('Напиши что-нибудь', 'err');
     return;
   }
 
-  globalSocket.send(JSON.stringify({ recipient_id: chatPartnerId, ciphertext: text }));
-  console.log("Сообщение отправлено через сокет");
-  input.value = "";
+  btn.disabled = true;
+  btn.innerHTML = '<span class="emoji">⏳</span><span>Отправляем…</span>';
+
+  try {
+    const place = await getMyPlace();
+    await api.createStatus({
+      text: text,
+      latitude: place.lat,
+      longitude: place.lon,
+    });
+
+    document.getElementById('text').value = '';
+    showToast('Опубликовано! 🎉', 'ok');
+    showFeed();
+  } catch (err) {
+    showToast(err.message || 'Ошибка', 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="emoji">📤</span><span>ОПУБЛИКОВАТЬ</span>';
+  }
 });
 
-// ====== Точка входа ======
-
-(function init() {
-  const token = Api.loadToken();
-  if (token) {
-    enterApp();
+// ---------- Кнопка "Уведомление" ----------
+document.getElementById('btn-notify').addEventListener('click', async () => {
+  const ok = await ensureNotificationPermission();
+  if (!ok) {
+    showToast('Разреши уведомления в настройках', 'err');
+    return;
   }
-})();
+
+  await showLocalNotification({
+    title: 'Пора гулять! 🚶',
+    body: 'Открой WalkApp и найди компанию.',
+  });
+
+  showToast('Уведомление отправлено!', 'ok');
+});
+
+// ---------- Нижнее меню ----------
+document.querySelectorAll('.bottom button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.bottom button')
+      .forEach((b) => b.classList.remove('on'));
+    btn.classList.add('on');
+    showToast('Открыто: ' + btn.querySelector('span:last-child').textContent);
+  });
+});
+
+// ---------- Запуск ----------
+showFeed();
+ensureNotificationPermission().catch(() => {});

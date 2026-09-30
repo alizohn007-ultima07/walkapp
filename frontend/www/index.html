@@ -1,110 +1,80 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Компания для прогулок</title>
-<link rel="stylesheet" href="css/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#252a40">
+  <title>WalkApp</title>
+  <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 
-  <!-- Экран авторизации -->
-  <section id="view-auth" class="view">
-    <div class="auth-card">
-      <h1>🚶  Компания для прогулок</h1>
-      <div class="tabs">
-        <button class="tab-btn active" data-tab="login">Вход</button>
-        <button class="tab-btn" data-tab="register">Регистрация</button>
-      </div>
-
-      <form id="form-login" class="auth-form">
-        <input type="text" id="login-username" placeholder="Логин" required>
-        <input type="password" id="login-password" placeholder="Пароль" required>
-        <button type="submit">Войти</button>
-        <p class="error" id="login-error"></p>
-      </form>
-
-      <form id="form-register" class="auth-form hidden">
-        <input type="text" id="reg-username" placeholder="Логин" required>
-        <input type="text" id="reg-displayname" placeholder="Имя, которое увидят другие" required>
-        <input type="password" id="reg-password" placeholder="Пароль (мин. 6 символов)" required minlength="6">
-        <button type="submit">Создать аккаунт</button>
-        <p class="error" id="register-error"></p>
-      </form>
-    </div>
-  </section>
-
-  <!-- Экран ленты -->
-  <section id="view-feed" class="view hidden">
-    <header class="app-header">
-      <h2>Лента прогулок</h2>
-      <button id="btn-logout" class="icon-btn">Выйти</button>
-    </header>
-
-    <div id="feed-status-banner" class="banner hidden"></div>
-
-    <div id="feed-list" class="feed-list">
-      <p class="empty-state">Загрузка…</p>
-    </div>
-
-    <button id="btn-new-status" class="fab">+ Статус</button>
-  </section>
-
-  <!-- Экран профиля (открывается через нижнюю навигацию) -->
-  <section id="view-profile" class="view hidden">
-    <header class="app-header">
-      <h2>Профиль</h2>
-    </header>
-    <div class="profile-card">
-      <div class="avatar-placeholder" id="profile-avatar">🙂 </div>
-      <input type="text" id="profile-displayname" placeholder="Имя">
-      <textarea id="profile-bio" placeholder="Расскажите о себе" maxlength="280"></textarea>
-      <div class="rating-row">
-        <span>Рейтинг доверия:</span>
-        <strong id="profile-rating">—</strong>
-      </div>
-      <button id="btn-save-profile">Сохранить</button>
-      <p class="hint" id="profile-saved-hint"></p>
-    </div>
-  </section>
-
-  <!-- Экран чата с конкретным пользователем -->
-  <section id="view-chat" class="view hidden">
-    <header class="app-header">
-      <button id="btn-chat-back" class="icon-btn">←</button>
-      <h2 id="chat-partner-name">Чат</h2>
-    </header>
-
-    <div id="chat-messages" class="chat-messages">
-      <p class="empty-state">Загрузка…</p>
-    </div>
-
-    <form id="form-chat-send" class="chat-input-row">
-      <input type="text" id="chat-input" placeholder="Сообщение…" autocomplete="off" required>
-      <button type="submit">Отправить</button>
-    </form>
-  </section>
-
-  <!-- Модалка создания статуса -->
-  <div id="modal-new-status" class="modal hidden">
-    <div class="modal-content">
-      <h3>Новый статус</h3>
-      <textarea id="new-status-text" placeholder="Куда и когда идёте гулять?" maxlength="200"></textarea>
-      <p id="geo-status" class="hint">Определяем ваше местоположение…</p>
-      <div class="modal-actions">
-        <button id="btn-cancel-status" class="secondary">Отмена</button>
-        <button id="btn-publish-status">Опубликовать</button>
-      </div>
+  <!-- ШАПКА: кто ты -->
+  <div class="top">
+    <div class="top-ava" id="my-ava">A</div>
+    <div class="top-info">
+      <div class="top-small">Привет, гуляющий!</div>
+      <div class="top-name" id="my-name">Александр</div>
     </div>
   </div>
 
-  <!-- Нижняя навигация -->
-  <nav id="bottom-nav" class="bottom-nav hidden">
-    <button class="nav-btn active" data-view="feed">Лента</button>
-    <button class="nav-btn" data-view="profile">Профиль</button>
-  </nav>
+  <div class="wrap">
 
-  <script src="js/api.js"></script>
-  <script src="js/app.js"></script>
+    <!-- БЛОК 1: написать статус -->
+    <div class="block">
+      <div class="block-title">📝 Написать статус</div>
+      <div class="block-hint">Расскажи, где гуляешь</div>
+
+      <textarea id="text"
+                placeholder="Например: Гуляю в парке, кто со мной?"></textarea>
+
+      <button class="big-btn" id="btn-post">
+        <span class="emoji">📤</span>
+        <span>ОПУБЛИКОВАТЬ</span>
+      </button>
+    </div>
+
+    <!-- БЛОК 2: уведомление -->
+    <div class="block">
+      <div class="block-title">🔔 Напоминание</div>
+      <div class="block-hint">Нажми — придёт уведомление в шторку</div>
+
+      <button class="big-btn green" id="btn-notify">
+        <span class="emoji">🔔</span>
+        <span>ПОКАЗАТЬ УВЕДОМЛЕНИЕ</span>
+      </button>
+    </div>
+
+    <!-- БЛОК 3: список людей -->
+    <div class="block-title" style="padding: 0 4px 14px;">
+      👥 Кто гуляет рядом
+    </div>
+
+    <div id="feed" class="people">
+      <div class="loading">Загружаем…</div>
+    </div>
+
+  </div>
+
+  <!-- НИЖНЕЕ МЕНЮ -->
+  <div class="bottom">
+    <button class="on" data-tab="feed">
+      <span class="ico">🏠</span>
+      <span>Лента</span>
+    </button>
+    <button data-tab="map">
+      <span class="ico">🗺️</span>
+      <span>Карта</span>
+    </button>
+    <button data-tab="me">
+      <span class="ico">👤</span>
+      <span>Профиль</span>
+    </button>
+  </div>
+
+  <div id="toast"></div>
+
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

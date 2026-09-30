@@ -3,8 +3,9 @@
   <component name="HardwareInputStateStorage">
     <option name="enabledDevices">
       <map>
-        <entry key="C:\Users\Arion\.android\avd\Pixel_5.avd" value="1790517598753" />
-        <entry key="PhysicalDevice::serial=10AE4B0MQQ0045F" value="1790512886127" />
+        <entry key="C:\Users\Arion\.android\avd\Pixel_5.avd" value="1790785737787" />
+        <entry key="PhysicalDevice::serial=10AE4B0MQQ0045F" value="1790611702925" />
+        <entry key="PhysicalDevice::serial=bd123c3a" value="1790686566895" />
       </map>
     </option>
   </component>

@@ -1,6 +1,5 @@
-// ===== Настройка адреса backend'а =====
+// ===== Адрес backend'а =====
 const API_BASE_URL = "https://walkapp-backend-1lw9.onrender.com/api";
-// Тот же хост, но для WebSocket (wss вместо https)
 const WS_BASE_URL = API_BASE_URL.replace(/^https/, "wss").replace(/\/api$/, "");
 
 const Api = {
@@ -37,6 +36,7 @@ const Api = {
     return data;
   },
 
+  // ===== Авторизация и профиль =====
   register(username, password, displayName) {
     return this._request("/auth/register/", {
       method: "POST",
@@ -56,6 +56,7 @@ const Api = {
     return this._request("/profile/me/", { method: "PATCH", body: patch });
   },
 
+  // ===== Лента =====
   getFeed(lat, lon) {
     const query = (lat != null && lon != null) ? `?lat=${lat}&lon=${lon}` : "";
     return this._request(`/statuses/${query}`);
@@ -65,13 +66,34 @@ const Api = {
     return this._request("/statuses/", { method: "POST", body: { text, latitude, longitude } });
   },
 
+  // ===== Оценки и комментарии =====
+  createRating(walkStatusId, ratedUserId, score, comment) {
+    return this._request("/ratings/", {
+      method: "POST",
+      body: { walk_status: walkStatusId, rated_user: ratedUserId, score, comment },
+    });
+  },
+
+  getComments(statusId) {
+    return this._request(`/statuses/${statusId}/comments/`);
+  },
+
+  createComment(statusId, text) {
+    return this._request(`/statuses/${statusId}/comments/`, {
+      method: "POST",
+      body: { text },
+    });
+  },
+
   // ===== Чат =====
   getChatHistory(userId) {
     return this._request(`/chat/${userId}/history/`);
   },
 
-  // Открывает (или переиспользует) WebSocket-соединение чата.
-  // onMessage(data) вызывается при каждом входящем сообщении.
+  getConversations() {
+    return this._request("/chat/conversations/");
+  },
+
   connectChatSocket(onMessage) {
     const ws = new WebSocket(`${WS_BASE_URL}/ws/chat/?token=${this.token}`);
     ws.onmessage = (event) => {
@@ -84,17 +106,23 @@ const Api = {
 
 // ===== Уведомления =====
 async function requestNotificationPermission() {
-  if (window.Capacitor?.Plugins?.LocalNotifications) {
-    await window.Capacitor.Plugins.LocalNotifications.requestPermissions();
-  }
+  try {
+    if (window.Capacitor?.Plugins?.LocalNotifications) {
+      await window.Capacitor.Plugins.LocalNotifications.requestPermissions();
+    } else if ("Notification" in window && Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+  } catch (_) { /* не критично */ }
 }
 
 async function showLocalNotification(title, body) {
-  if (window.Capacitor?.Plugins?.LocalNotifications) {
-    await window.Capacitor.Plugins.LocalNotifications.schedule({
-      notifications: [{ id: Date.now() % 100000, title, body }],
-    });
-  } else if ("Notification" in window && Notification.permission === "granted") {
-    new Notification(title, { body });
-  }
+  try {
+    if (window.Capacitor?.Plugins?.LocalNotifications) {
+      await window.Capacitor.Plugins.LocalNotifications.schedule({
+        notifications: [{ id: Date.now() % 100000, title, body }],
+      });
+    } else if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(title, { body });
+    }
+  } catch (_) { /* не критично */ }
 }
